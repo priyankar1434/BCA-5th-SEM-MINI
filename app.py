@@ -1,7 +1,6 @@
 # app.py
 import os
 import json
-import logging
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -9,15 +8,6 @@ from functools import wraps
 from PIL import Image
 import re
 import io
-from dotenv import load_dotenv
-from storage import upload_file_to_s3, delete_file_from_s3, get_presigned_url
-
-# Load environment variables
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 try:
     import pytesseract
@@ -29,7 +19,7 @@ except ImportError:
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'static/uploads'  # Fallback for local development
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB limit
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
+app.config['SECRET_KEY'] = 'college_vehicle_auth_2024_secure_key'
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -162,45 +152,26 @@ def verify_vehicle(license_plate):
         }
 
 def save_image(file, plate, is_authorized):
-    """Save image to S3 if configured, otherwise save locally"""
-    try:
-        # For S3 storage
-        if all([os.getenv('AWS_ACCESS_KEY_ID'), 
-                os.getenv('AWS_SECRET_ACCESS_KEY'), 
-                os.getenv('S3_BUCKET_NAME')]):
-            result = upload_file_to_s3(file)
-            if result:
-                return result['url']
-            raise Exception("Failed to upload to S3")
-        
-        # Fallback to local storage
-        else:
-            filename = secure_filename(f"{datetime.utcnow().timestamp()}_{file.filename}")
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            return filename
-            
-    except Exception as e:
-        logger.error(f"Error saving image: {str(e)}")
-        raise
+    """Save image locally"""
+    filename = secure_filename(f"{datetime.utcnow().timestamp()}_{file.filename}")
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+    return filename
 
 def get_images():
-    """Get list of uploaded images"""
+    """Get list of uploaded images with metadata"""
     try:
-        # For local development, return list of files in upload folder
-        if not all([os.getenv('AWS_ACCESS_KEY_ID'), 
-                   os.getenv('AWS_SECRET_ACCESS_KEY'), 
-                   os.getenv('S3_BUCKET_NAME')]):
-            if not os.path.exists(app.config['UPLOAD_FOLDER']):
-                return []
-            return [f for f in os.listdir(app.config['UPLOAD_FOLDER']) 
-                   if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))]
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            return []
         
-        # In production, this would list files from S3
-        # For simplicity, we'll return an empty list
-        return []
+        images = []
+        for f in os.listdir(app.config['UPLOAD_FOLDER']):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                # Return tuple: (filename, upload_time, plate, is_authorized)
+                # For now, we use filename without additional metadata
+                images.append((f, 'Unknown', 'N/A', False))
+        return images
     except Exception as e:
-        logger.error(f"Error getting images: {str(e)}")
         return []
 
 # --- Flask Routes ---

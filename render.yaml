@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: vehicle-management
+    env: python
+    buildCommand: "pip install -r requirements.txt && python -m pip install --upgrade pip"
+    startCommand: "gunicorn --worker-tmp-dir /dev/shm --workers=2 --threads=4 --worker-class=gthread --timeout 120 --bind 0.0.0.0:$PORT wsgi:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.18
+      - key: FLASK_APP
+        value: "app.py"
+      - key: FLASK_ENV
+        value: "production"
+      - key: PORT
+        value: 10000
+      - key: PYTHONUNBUFFERED
+        value: "true"
+      - key: SECRET_KEY
+        generateValue: true

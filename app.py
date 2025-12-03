@@ -1,7 +1,7 @@
 # app.py
 import os
 import json
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from werkzeug.utils import secure_filename
 from datetime import datetime
 from functools import wraps
@@ -26,6 +26,13 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Vehicle Database (JSON) ---
 VEHICLE_DB_FILE = 'vehicle_database.json'
+VERIFICATION_LOG_FILE = 'verification_log.json'
+
+def _ensure_verification_log_exists():
+    """Ensure verification log file exists."""
+    if not os.path.exists(VERIFICATION_LOG_FILE):
+        with open(VERIFICATION_LOG_FILE, 'w') as f:
+            json.dump({"verifications": []}, f, indent=4)
 
 def load_vehicles():
     """Load authorized vehicles from JSON file."""
@@ -33,6 +40,36 @@ def load_vehicles():
         with open(VEHICLE_DB_FILE, 'r') as f:
             data = json.load(f)
             return [v.upper() for v in data.get('authorized_vehicles', [])]
+    except (json.JSONDecodeError, FileNotFoundError):
+        return []
+
+def save_verification(plate, is_authorized, filename=None):
+    """Save verification result to log."""
+    _ensure_verification_log_exists()
+    try:
+        with open(VERIFICATION_LOG_FILE, 'r') as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        data = {"verifications": []}
+    
+    verification_record = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "plate": plate,
+        "is_authorized": is_authorized,
+        "filename": filename
+    }
+    data["verifications"].append(verification_record)
+    
+    with open(VERIFICATION_LOG_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
+
+def load_verifications():
+    """Load all verification records from log."""
+    _ensure_verification_log_exists()
+    try:
+        with open(VERIFICATION_LOG_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get("verifications", [])
     except (json.JSONDecodeError, FileNotFoundError):
         return []
 
@@ -51,7 +88,7 @@ def authenticate_user(username, password):
     # Basic sample users (username, password)
     users = [
         {'id': 1, 'username': 'admin', 'password': 'admin123', 'full_name': 'Administrator', 'role': 'admin'},
-        {'id': 2, 'username': 'student1', 'password': 'pass123', 'full_name': 'Rahul Sharma', 'role': 'student'},
+        {'id': 2, 'username': 'priyankar', 'password': 'pri123', 'full_name': 'Priyankar Shukla', 'role': 'student'},
         {'id': 3, 'username': 'student2', 'password': 'pass123', 'full_name': 'Priya Patel', 'role': 'student'},
     ]
 
@@ -126,14 +163,19 @@ def extract_license_plates_from_text(text):
     
     return list(set(plates))
 
-def verify_vehicle(license_plate):
+def verify_vehicle(license_plate, filename=None):
     """
     Lookup the license plate in JSON vehicle database and return authorization info.
+    Also saves the verification result to the log.
     """
     clean_plate = license_plate.strip().upper().replace(" ", "")
     authorized_vehicles = load_vehicles()
+    is_authorized = clean_plate in authorized_vehicles
     
-    if clean_plate in authorized_vehicles:
+    # Save verification result to log
+    save_verification(clean_plate, is_authorized, filename)
+    
+    if is_authorized:
         return {
             "is_authorized": True,
             "plate": clean_plate,
@@ -159,17 +201,17 @@ def save_image(file, plate, is_authorized):
     return filename
 
 def get_images():
-    """Get list of uploaded images with metadata"""
+    """Get list of verification records from verification log"""
     try:
-        if not os.path.exists(app.config['UPLOAD_FOLDER']):
-            return []
-        
+        verifications = load_verifications()
+        # Convert to format expected by template: (filename, upload_time, plate, is_authorized)
         images = []
-        for f in os.listdir(app.config['UPLOAD_FOLDER']):
-            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-                # Return tuple: (filename, upload_time, plate, is_authorized)
-                # For now, we use filename without additional metadata
-                images.append((f, 'Unknown', 'N/A', False))
+        for v in reversed(verifications):  # Newest first
+            filename = v.get('filename', 'N/A')
+            timestamp = v.get('timestamp', 'Unknown').split('T')[0]  # Just the date
+            plate = v.get('plate', 'Unknown')
+            is_authorized = v.get('is_authorized', False)
+            images.append((filename, timestamp, plate, is_authorized))
         return images
     except Exception as e:
         return []
@@ -278,8 +320,8 @@ def upload_image():
     if file.filename == '':
         return jsonify({"message": "No selected file"}), 400
     plate = request.form.get('license_plate', 'UNKNOWN')
-    result = verify_vehicle(plate)
-    filename = save_image(file, plate, result['is_authorized'])
+    filename = save_image(file, plate, True)  # Save file first
+    result = verify_vehicle(plate, filename)  # Then verify and log
     return jsonify({"message": "Image uploaded", "filename": filename, "result": result})
 
 @app.route('/gallery')
@@ -293,30 +335,16 @@ def gallery():
 
 @app.route('/static/uploads/<path:filename>')
 def uploaded_file(filename):
-    """Serve uploaded files from local filesystem (development only)"""
-    if not all([os.getenv('AWS_ACCESS_KEY_ID'), 
-               os.getenv('AWS_SECRET_ACCESS_KEY'), 
-               os.getenv('S3_BUCKET_NAME')]):
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-    
-    # In production, redirect to S3 URL
-    s3_path = f"uploads/{filename}"
-    presigned_url = get_presigned_url(s3_path)
-    if presigned_url:
-        return redirect(presigned_url)
-    return "File not found", 404
+    """Serve uploaded files from local filesystem"""
+    from flask import send_from_directory
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 # --- Application Run ---
 
 if __name__ == '__main__':
-    # Check for required environment variables in production
-    if os.getenv('FLASK_ENV') == 'production':
-        required_vars = ['SECRET_KEY']
-        missing_vars = [var for var in required_vars if not os.getenv(var)]
-        if missing_vars:
-            logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
-            exit(1)
+    # Ensure verification log exists
+    _ensure_verification_log_exists()
     
     # Run the application
     port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=os.getenv('FLASK_ENV') != 'production')
+    app.run(host='0.0.0.0', port=port, debug=True)

@@ -275,9 +275,13 @@
         
         <div class="gallery-grid" id="gallery">
             {% for filename, upload_time, plate, is_authorized in images %}
-            <div class="gallery-item reveal">
+            <div class="gallery-item reveal" data-status="{% if is_authorized %}authorized{% else %}unauthorized{% endif %}">
                 <div class="gallery-content text-center py-3">
                     <div class="gallery-plate">{{ plate }}</div>
+                    <div class="gallery-time">{{ upload_time.split('T')[0] if 'T' in upload_time else upload_time }}</div>
+                    <span class="gallery-status {% if is_authorized %}authorized{% else %}unauthorized{% endif %}">
+                        {% if is_authorized %}✓ Authorized{% else %}✗ Unauthorized{% endif %}
+                    </span>
                 </div>
             </div>
             {% endfor %}

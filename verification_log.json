@@ -1,0 +1,40 @@
+{
+    "verifications": [
+        {
+            "timestamp": "2025-12-03T18:07:02.414981",
+            "plate": "MH12AB1234",
+            "is_authorized": true,
+            "filename": "test_image_1.jpg"
+        },
+        {
+            "timestamp": "2025-12-03T18:07:02.423451",
+            "plate": "XX99YY5555",
+            "is_authorized": false,
+            "filename": "test_image_2.jpg"
+        },
+        {
+            "timestamp": "2025-12-03T18:07:57.987595",
+            "plate": "M2346021",
+            "is_authorized": true,
+            "filename": "1764765477.985467_data-1.webp"
+        },
+        {
+            "timestamp": "2025-12-03T18:09:22.371614",
+            "plate": "PL5CAB1234",
+            "is_authorized": false,
+            "filename": "1764765562.370448_71yh1WYF8eL._AC_UF10001000_QL80_.jpg"
+        },
+        {
+            "timestamp": "2025-12-03T18:14:10.829862",
+            "plate": "M2346021",
+            "is_authorized": true,
+            "filename": "1764765850.827659_data-1.webp"
+        },
+        {
+            "timestamp": "2025-12-03T18:20:41.227832",
+            "plate": "UK06AF6226",
+            "is_authorized": true,
+            "filename": "1764766241.225854_GDG_Logo.gif"
+        }
+    ]
+}
